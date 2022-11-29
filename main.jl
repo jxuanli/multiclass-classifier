@@ -78,8 +78,7 @@ function main()
     println(".......................................................................")
     tmp = DataFrame(PassengerId=892:1309, Survived=Vector{Int64}(res))
     println(first(tmp, 10))
-    CSV.write("res1.csv", tmp)
-    # CSV.write("gender_submission.csv", tmp)
+    CSV.write("gender_submission.csv", tmp)
 end
 
 @time "main" main()

@@ -66,15 +66,18 @@ function fetcher(path::String, is_generative::Bool=false)
     if columnindex(df, :Survived) != 0
         y = df[:, :Survived]
     end 
-    transform!(df, AsTable(:) .=> ByRow.([r -> convert_cabin(r.Cabin), 
-                                          r -> convert_cabin(r.Ticket)])
-                                          .=> [:Cabin, :Ticket])
+    # transform!(df, AsTable(:) .=> ByRow.([r -> convert_cabin(r.Cabin), 
+    #                                       r -> convert_cabin(r.Ticket)])
+    #                                       .=> [:Cabin, :Ticket])
+    transform!(df, AsTable(:) .=> ByRow.([r -> ismissing(r.Cabin) ? 0 : (Int(r.Cabin[1]) <= 57 && Int(r.Cabin[1]) >= 49 ? 1 : 2)])
+                                            .=> [:Cabin])
     fill!(df, is_generative)
     dropmissing!(df)
     select!(df, :Pclass, :Sex, :Age, :SibSp, :Parch, :Fare, :Embarked, :Cabin, :Ticket) 
     transform!(df, AsTable(:) .=> ByRow.([r -> r.Sex == "" ? NaN : (r.Sex == "male" ? 1 : 0), 
-                                          r -> r.Embarked == "" ? NaN : (r.Embarked == "S" ? 0 : (r.Embarked == "Q" ? 1 : 2))])
-                                          .=> [:Sex, :Embarked])
+                                          r -> r.Embarked == "" ? NaN : (r.Embarked == "S" ? 0 : (r.Embarked == "Q" ? 1 : 2)), 
+                                          r -> Int(r.Ticket[1]) <= 57 && Int(r.Ticket[1]) >= 49 ? 0 : 1])
+                                          .=> [:Sex, :Embarked, :Ticket])
     X = reshape(Vector(df[1, :]),(1,length(df[1, :])))
     for i in 2:rownumber(df[end, :])  
         X = [X; reshape(Vector(df[i, :]),(1,length(df[1, :])))]
