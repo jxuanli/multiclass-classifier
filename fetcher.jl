@@ -19,15 +19,15 @@ function convert_cabin(s::Union{String, Missing})
         k = s[1]
         if k == 'A'
             res = 7
-        else if k == 'B'
+        elseif k == 'B'
             res = 6
-        else if k == 'C'
+        elseif k == 'C'
             res = 5
-        else if k == 'D'
+        elseif k == 'D'
             res = 4
-        else if k == 'E'
+        elseif k == 'E'
             res = 3
-        else if k == 'F'
+        elseif k == 'F'
             res = 2
         else 
             res = 1
@@ -40,19 +40,19 @@ function convert_ticket(s::String)
     res = 0
     if s[1] == 'A'
         res = 1
-    else if s[1] == 'C'
+    elseif s[1] == 'C'
         res = 2
-    else if length(s) >= 2 && s[1:2] == "PC"
+    elseif length(s) >= 2 && s[1:2] == "PC"
         res = 3
-    else if length(s) >= 5 && s[1:5] == "SOTON"
+    elseif length(s) >= 5 && s[1:5] == "SOTON"
         res = 4
-    else if length(s) >= 4 && s[1:4] == "STON"
+    elseif length(s) >= 4 && s[1:4] == "STON"
         res = 5
-    else if s[1] == 'W'
+    elseif s[1] == 'W'
         res = 6
-    else if s[1] == 'S'
+    elseif s[1] == 'S'
         res = 7
-    else if !(Int(s[1]) <= 57 && Int(s[1]) >= 49)
+    elseif !(Int(s[1]) <= 57 && Int(s[1]) >= 49)
         res = 8
     else 
         res = 0
@@ -66,15 +66,15 @@ function fetcher(path::String, is_generative::Bool=false)
     if columnindex(df, :Survived) != 0
         y = df[:, :Survived]
     end 
-    transform!(df, AsTable(:) .=> ByRow.([r -> ismissing(r.Cabin) ? 0 : (Int(r.Cabin[1]) <= 57 && Int(r.Cabin[1]) >= 49 ? 1 : 2)])
-                                          .=> [:Cabin])
+    transform!(df, AsTable(:) .=> ByRow.([r -> convert_cabin(r.Cabin), 
+                                          r -> convert_cabin(r.Ticket)])
+                                          .=> [:Cabin, :Ticket])
     fill!(df, is_generative)
     dropmissing!(df)
     select!(df, :Pclass, :Sex, :Age, :SibSp, :Parch, :Fare, :Embarked, :Cabin, :Ticket) 
     transform!(df, AsTable(:) .=> ByRow.([r -> r.Sex == "" ? NaN : (r.Sex == "male" ? 1 : 0), 
-                                          r -> r.Embarked == "" ? NaN : (r.Embarked == "S" ? 0 : (r.Embarked == "Q" ? 1 : 2)), 
-                                          r -> Int(r.Ticket[1]) <= 57 && Int(r.Ticket[1]) >= 49 ? 0 : 1])
-                                          .=> [:Sex, :Embarked, :Ticket])
+                                          r -> r.Embarked == "" ? NaN : (r.Embarked == "S" ? 0 : (r.Embarked == "Q" ? 1 : 2))])
+                                          .=> [:Sex, :Embarked])
     X = reshape(Vector(df[1, :]),(1,length(df[1, :])))
     for i in 2:rownumber(df[end, :])  
         X = [X; reshape(Vector(df[i, :]),(1,length(df[1, :])))]
