@@ -1,27 +1,27 @@
 
 function rf(X_train::Matrix, y_train::Vector, X_test::Matrix, n=5)
-    opt_depth, opt_reg = rf_cv(X_train, y_train, n)
+    opt_depth, opt_reg, accuracy = rf_cv(X_train, y_train, n)
     rf_tree = rf_helper(X_train, y_train, 0, opt_depth, opt_reg)
     res = []
     for i in axes(X_test)[1]
         tmp = predict(rf_tree, X_test[i, :])
         push!(res, tmp)
     end
-    res
+    res, accuracy
 end
 
 function rf_cv(X_train::Matrix, y_train::Vector, n)
-    depths = trunc(Int, length(X_train[1, :])/2):length(X_train[1, :])*2
+    depths = trunc(Int, length(X_train[1, :])/2):trunc(Int, length(X_train[1, :])*3/20):length(X_train[1, :])*2
     regularizations = [0.01 0.03 0.05 0.08 0.1 0.3 0.5 0.7 0.9 1.0 1.2 1.4 1.8]
     println("...........................training rf depth...........................")
-    depth = cv_helper(X_train, y_train, rf_train, nothing, depths, n, "depth", 0.1)
+    depth, _ = cv_helper(X_train, y_train, rf_train, nothing, depths, n, "depth", 1 / n)
     println("opt_depth: ", depth)
     println(".......................................................................")
     println(".....................training rf regularization........................")
-    reg = cv_helper(X_train, y_train, rf_train, depth, regularizations, n, "reg")
-    println("opt_regularization: ", reg)
+    reg, accuracy = cv_helper(X_train, y_train, rf_train, depth, regularizations, n, "reg")
+    println("opt_regularization: ", reg, " with accuracy: ", accuracy)
     println(".......................................................................")
-    depth, reg
+    depth, reg, accuracy
 end
 
 function rf_train(X_train::Matrix, y_train::Vector, X_test::Matrix, arg)

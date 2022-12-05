@@ -48,28 +48,32 @@ function cv_knn_gen(X_train::Matrix, y_train::Vector, x_test::Matrix, k::Int64)
 end
 
 function knn_cv(X_train::Matrix, y_train::Vector, n::Int64)
-    ks = 1:2:40
+    ks = 10:2:40
     println("...........................training knn ...............................")
-    k = cv_helper(X_train, y_train, knn_train, nothing, ks, n, "k")
-    println("opt_k: ", k)
+    k, accuracy = cv_helper(X_train, y_train, knn_train, nothing, ks, n, "k")
+    println("opt_k: ", k, " with accuracy: ", accuracy)
     println(".......................................................................")
-    k
+    k, accuracy
 end
 
 function knn_train(X_train::Matrix, y_train::Vector, X_test::Matrix, arg) 
     k = arg[2]
     res = []
+    X_means, X_stds = get_normalization_info(X_train)
+    X_test_normalized = (X_test .- X_means) ./ X_stds
     for i in axes(X_test)[1]
-        push!(res, cv_knn_gen(X_train, y_train, reshape(X_test[i, :], (1, length(X_test[i, :]))), k))
+        push!(res, cv_knn_gen((X_train .- X_means) ./ X_stds, y_train, reshape(X_test_normalized[i, :], (1, length(X_test[i, :]))), k))
     end
     res
 end
 
 function knn(X_train::Matrix, y_train::Vector, X_test::Matrix, n=5)
-    k = knn_cv(X_train, y_train, n)
+    k, accuracy = knn_cv(X_train, y_train, n)
     pred = []
+    X_means, X_stds = get_normalization_info(X_train)
+    X_test_normalized = (X_test .- X_means) ./ X_stds
     for i in axes(X_test)[1]
-        push!(pred, cv_knn_gen(X_train, y_train, reshape(X_test[i, :], (1, length(X_test[i, :]))), k))
+        push!(pred, cv_knn_gen((X_train .- X_means) ./ X_stds, y_train, reshape(X_test_normalized[i, :], (1, length(X_test[i, :]))), k))
     end
-    pred
+    pred, accuracy
 end

@@ -1,8 +1,21 @@
-using CSV, DataFrames, CategoricalArrays, Statistics, SpecialFunctions, Random;
+using CSV, DataFrames, CategoricalArrays, Statistics, SpecialFunctions, Random, JuMP, HiGHS, Convex, SCS;
 include("./knn.jl")
 include("./nbc.jl")
 include("./rf.jl")
+include("./svm.jl")
 include("./fetcher.jl")
+
+function get_normalization_info(X::Matrix)
+    means = []
+    stds = []
+    for i in axes(X)[2]
+        # push!(means, length(levels(X[:, i])) < 10 ? 0 : mean(X[:, i]))
+        # push!(stds,  length(levels(X[:, i])) < 10 ? 0 :  std(X[:, i]))
+        push!(means, mean(X[:, i]))
+        push!(stds,  std(X[:, i]))
+    end
+    reshape(means, (1, length(means))), reshape(stds, (1, length(stds)))
+end
 
 function most_frequent(vec::Vector)
     dict = Dict()
@@ -18,13 +31,18 @@ function most_frequent(vec::Vector)
     key
 end
 
+mutable struct Atomic
+    @atomic x::Float64
+end
+
 function cv_helper(X_train, y_train::Vector, func::Function, arg, vec, n::Int64, name::String, regularization_factor=0)
     shuffled_indices = shuffle(1:length(y_train))
     batch = floor(length(y_train) / n)
-    losses = []
-    for e in vec
-        loss = e * regularization_factor
-        for i in n
+    losses = repeat([0.0], length(vec))
+    Threads.@threads :dynamic for idx in eachindex(vec)
+        e = vec[idx]
+        loss = Atomic(e * regularization_factor)
+        Threads.@threads :dynamic for i in 1:n
             start = trunc(Int, (i - 1) * batch) + 1
             finish = i == n ? length(y_train) : trunc(Int, i * batch)
             bitmap = repeat([0], length(y_train))
@@ -32,13 +50,12 @@ function cv_helper(X_train, y_train::Vector, func::Function, arg, vec, n::Int64,
             bitmap = BitArray(bitmap)
             args = [arg e]
             actual = func(X_train[shuffled_indices[(!).(bitmap)], :], y_train[shuffled_indices[(!).(bitmap)]], X_train[shuffled_indices[bitmap], :], args)
-            loss += sum(abs.(y_train[shuffled_indices[bitmap]] .- actual)) / n
+            @atomic loss.x += sum(abs.(y_train[shuffled_indices[bitmap]] .- actual)) / n
         end
-        loss = round(loss, digits=3)
-        println(name, ": ", e, " loss: ", loss)
-        push!(losses, loss)
+        println(name, ": ", e, " loss: ", round(loss.x, digits=3))
+        losses[idx] = round(loss.x, digits=3)
     end
-    vec[argmin(losses)]
+    vec[argmin(losses)], 1 - minimum(losses) / batch
 end
 
 # 77.8% (22.2%)
@@ -46,39 +63,48 @@ end
 
 function main()
     Random.seed!(1)
-    X_train, X_means, X_stds, y_train = fetcher("../data/train.csv")
-    X_test, _, _, _ = fetcher("../data/test.csv")
-    X_train_normalized = (X_train .- X_means) ./ X_stds
-    X_test_normalized = (X_test .- X_means) ./ X_stds
-    X_train, _, _, y_train = fetcher("../data/train.csv", true)
-    X_test, _, _, _ = fetcher("../data/test.csv", true)
+    X_train, y_train = fetcher("../data/train.csv")
+    X_test, _,  = fetcher("../data/test.csv")
     println(".......................................................................")
-    @time "knn" knn_res = knn(X_train_normalized, y_train, X_test_normalized)
-    @time "rf" rf_res = rf(X_train, y_train, X_test)
+    @time "knn" knn_res, knn_accuracy = knn(X_train, y_train, X_test)
+    println(".......................................................................")
+    @time "svm" svm_res, svm_accuracy = svm(X_train, y_train, X_test)
+    println(".......................................................................")
+    X_train, y_train = fetcher("../data/train.csv", true)
+    X_test, _ = fetcher("../data/test.csv", true)
+    println(".......................................................................")
+    @time "rf" rf_res, rf_accuracy = rf(X_train, y_train, X_test)
     println(".......................................................................")
     println(".......................................................................")
-    @time "nbc" nbc_res = nbc(X_train, y_train, X_test)
+    @time "nbc" nbc_res, nbc_accuracy = nbc(X_train, y_train, X_test)
     println(".......................................................................")
     println("knn: ", sum(knn_res) / length(knn_res))
     println("rf: ", sum(rf_res) / length(rf_res))
     println("nbc: ", sum(nbc_res) / length(nbc_res))
+    println("svm: ", sum(svm_res) / length(svm_res))
     println(".......................................................................")
     println(".......................................................................")
     println("knn vs rf: ", sum(abs.(knn_res - rf_res)))
     println("nbc vs rf: ", sum(abs.(nbc_res - rf_res)))
     println("nbc vs knn: ", sum(abs.(nbc_res - knn_res)))
-    res = rf_res + nbc_res + knn_res
-    res = map(x -> x > 1 ? 1 : 0, res)
+    println("svm vs rf: ", sum(abs.(svm_res - rf_res)))
+    println("svm vs nbc: ", sum(abs.(svm_res - nbc_res)))
+    println("svm vs knn: ", sum(abs.(svm_res - knn_res)))
+    accuracy_sum = knn_accuracy + svm_accuracy + rf_accuracy + nbc_accuracy
+    res = rf_res * (rf_accuracy / accuracy_sum) + svm_res * (svm_accuracy / accuracy_sum) + knn_res * (knn_accuracy / accuracy_sum) + nbc_res * (nbc_accuracy / accuracy_sum) 
+    res = map(x -> x > 0.5 ? 1 : 0, res)
     println(".......................................................................")
     println(".......................................................................")
     println("res vs knn: ", sum(abs.(res - knn_res)))
     println("res vs rf: ", sum(abs.(res - rf_res)))
     println("res vs nbc: ", sum(abs.(res - nbc_res)))
+    println("res vs svm: ", sum(abs.(res - svm_res)))
     println(".......................................................................")
     println(".......................................................................")
     tmp = DataFrame(PassengerId=892:1309, Survived=Vector{Int64}(res))
     println(first(tmp, 10))
-    CSV.write("gender_submission.csv", tmp)
+    # CSV.write("gender_submission.csv", tmp)
+    CSV.write("res2.csv", tmp)
 end
 
 @time "main" main()

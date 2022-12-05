@@ -1,5 +1,22 @@
 
-function nbc(X_train, y_train, X_test)
+function nbc(X_train, y_train, X_test, n=5)
+    accuracy = nbc_cv(X_train, y_train, n)
+    nbc_predict(X_train, y_train, X_test), accuracy
+end
+
+function nbc_cv(X_train::Matrix, y_train::Vector, n)
+    println("...........................validating nbc.............................")
+    _, accuracy = cv_helper(X_train, y_train, nbc_train, nothing, [0], n, "nbc", 1 / n)
+    println("nbc accuracy: ", accuracy)
+    println(".......................................................................")
+    accuracy
+end
+
+function nbc_train(X_train, y_train, X_test, args)
+    nbc_predict(X_train, y_train, X_test)
+end
+
+function nbc_predict(X_train, y_train, X_test)
     labels = levels(y_train)
     priors = compute_priors(y_train)
     cat_map = cat_nbc(X_train, y_train)
